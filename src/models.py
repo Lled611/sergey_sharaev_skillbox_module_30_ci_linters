@@ -4,7 +4,7 @@ from sqlalchemy import Column, ForeignKey, Integer, String, select, Select, Scal
 from sqlalchemy.orm import relationship, subqueryload, selectinload
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.sql import exists
-from database import session, Base
+from .database import session, Base
 
 
 class Product(Base):

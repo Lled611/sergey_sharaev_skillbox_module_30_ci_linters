@@ -6,13 +6,13 @@ from sqlalchemy import Row, select
 from sqlalchemy.ext.asyncio.engine import AsyncConnection
 from sqlalchemy.orm import selectinload
 
-from schemas import RecipeIn as SchemaRecipeIn, \
+from .schemas import RecipeIn as SchemaRecipeIn, \
     RecipeOut as SchemaRecipeOut, \
     Ingredient as SchemaIngredient, \
     RecipeShortInfo as SchemaRecipeShortInfo, \
     ErrorDetail
-from database import engine, session, Base
-from models import Recipe, Product, Ingredient
+from .database import engine, session, Base
+from .models import Recipe, Product, Ingredient
 
 
 @asynccontextmanager
