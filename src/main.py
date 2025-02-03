@@ -1,18 +1,20 @@
-from typing import List, Dict
+from typing import List
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, HTTPException, Path, Depends
 from http import HTTPStatus
-from sqlalchemy import Row, select
+from sqlalchemy import select, Select, ScalarResult
 from sqlalchemy.ext.asyncio.engine import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import exists
 
-from schemas import RecipeIn as SchemaRecipeIn, \
+from .schemas import RecipeIn as SchemaRecipeIn, \
     RecipeOut as SchemaRecipeOut, \
     Ingredient as SchemaIngredient, \
     RecipeShortInfo as SchemaRecipeShortInfo, \
     ErrorDetail
-from database import engine, session, Base
-from models import Recipe, Product, Ingredient
+from .database import engine, Base, get_session
+from .models import Recipe, Product, Ingredient
 
 
 @asynccontextmanager
@@ -21,7 +23,6 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
-    await session.close()
     await engine.dispose()
 
 
@@ -42,34 +43,49 @@ app = FastAPI(
         }
     }
 )
-async def recipes(recipe_in: SchemaRecipeIn) -> None:
-    async with session.begin():
-        if await Recipe.exists(recipe_in.name):
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=f'Рецепт "{recipe_in.name}" уже существует!'
-            )
-
-        recipe: Recipe = Recipe(
-            name=recipe_in.name,
-            description=recipe_in.description,
-            cooking_time=recipe_in.cooking_time
+async def recipes(recipe_in: SchemaRecipeIn, session: AsyncSession = Depends(get_session)) -> None:
+    stmt: Select = select(
+        exists() \
+            .where(Recipe.name == recipe_in.name)
         )
 
-        session.add(recipe)
-        await session.flush([recipe])
+    if await session.scalar(stmt):
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f'Рецепт "{recipe_in.name}" уже существует!'
+        )
 
-        ingridient_in: SchemaIngredient
-        for ingridient_in in recipe_in.ingredients:
-            product: Product = await Product.get_or_create(ingridient_in.product.name)
+    recipe: Recipe = Recipe(
+        name=recipe_in.name,
+        description=recipe_in.description,
+        cooking_time=recipe_in.cooking_time
+    )
 
-            ingridient: Ingredient = Ingredient(
-                recipe_id=recipe.id,
-                product_id=product.id,
-                count=ingridient_in.count
+    session.add(recipe)
+    await session.flush([recipe])
+
+    ingridient_in: SchemaIngredient
+    for ingridient_in in recipe_in.ingredients:
+        stmt: Select = select(Product) \
+            .where(Product.name == ingridient_in.product.name)
+
+        product: Product = await session.scalar(stmt)
+        if not product:
+            product = Product(
+                name=ingridient_in.product.name
             )
 
-            session.add(ingridient)
+            session.add(product)
+            await session.flush([product])
+
+        ingridient: Ingredient = Ingredient(
+            recipe_id=recipe.id,
+            product_id=product.id,
+            count=ingridient_in.count
+        )
+
+        session.add(ingridient)
+    await session.commit()
 
 
 @app.get(
@@ -77,15 +93,23 @@ async def recipes(recipe_in: SchemaRecipeIn) -> None:
     summary='Список всех рецептов',
     response_model=List[SchemaRecipeShortInfo]
 )
-async def recipes() -> List[Recipe]:
+async def recipes(session: AsyncSession = Depends(get_session)) -> List[Recipe]:
     '''
     Endpoint для получения списка всех рецептов.
 
     Рецепты отсортированы по количеству просмотров в порядке убывания.
     Если число просмотров совпадает, рецепты сортируются по времени приготовления.
     '''
-    async with session.begin():
-        return await Recipe.get_recipes()
+    stmt: Select = select(Recipe) \
+        .order_by(
+            Recipe.views_count.desc(),
+            Recipe.cooking_time,
+            Recipe.id
+        )
+
+    result: ScalarResult = await session.scalars(stmt)
+
+    return result.all()
 
 
 @app.get(
@@ -105,21 +129,25 @@ async def recipes(
         title='Id рецепта',
         description='Id рецепта',
         gt=0
-    )
+    ), session: AsyncSession = Depends(get_session)
 ) -> SchemaRecipeOut:
-    async with session.begin():
-        recipe: Recipe = await Recipe.get_by_id(recipe_id)
+    stmt: Select = select(Recipe) \
+        .options(
+            selectinload(Recipe.ingredients).selectinload(Ingredient.product)
+        ) \
+        .where(Recipe.id == recipe_id)
 
-        if recipe:
-            print(isinstance(recipe, Recipe))
+    recipe: Recipe = await session.scalar(stmt)
 
-            recipe_out = SchemaRecipeOut.model_validate(recipe)
+    if recipe:
+        recipe.views_count += 1
+        await session.commit()
 
-            print(isinstance(recipe_out, SchemaRecipeOut))
+        recipe_out = SchemaRecipeOut.model_validate(recipe)
 
-            return recipe_out
-        else:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail=f'Рецепта с id={recipe_id} не существует!'
-            )
+        return recipe_out
+    else:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail=f'Рецепта с id={recipe_id} не существует!'
+        )
