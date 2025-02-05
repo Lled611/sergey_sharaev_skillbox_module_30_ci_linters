@@ -1,19 +1,17 @@
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
 from sqlalchemy.orm import sessionmaker
-from httpx import ASGITransport, AsyncClient
 
-from src.main import app, get_session, Base
+from src.main import Base, app, get_session
 
 DATABASE_URL: str = "sqlite+aiosqlite:///"
 
 
 engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=False)
 async_session: sessionmaker = sessionmaker(
-    engine,
-    expire_on_commit=False,
-    class_=AsyncSession
+    engine, expire_on_commit=False, class_=AsyncSession
 )
 
 
@@ -26,7 +24,7 @@ async def get_session_override() -> AsyncSession:
 app.dependency_overrides[get_session] = get_session_override
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 async def db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -39,6 +37,6 @@ async def db() -> None:
 @pytest.fixture
 async def client(db) -> AsyncClient:
     async with AsyncClient(
-            transport=ASGITransport(app=app), base_url='http://127.0.0.1:8000'
+        transport=ASGITransport(app=app), base_url="http://127.0.0.1:8000"
     ) as client:
         yield client
