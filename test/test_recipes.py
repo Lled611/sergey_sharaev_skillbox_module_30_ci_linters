@@ -1,47 +1,32 @@
 import pytest
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.ext.asyncio.engine import AsyncEngine
-from sqlalchemy.orm import sessionmaker
-
-from src.main import app, get_session, Base
+from httpx import AsyncClient
 
 
-DATABASE_URL: str = "sqlite+aiosqlite:///./test_recipes.db"
+@pytest.mark.asyncio
+async def test_create_recipe(client: AsyncClient) -> None:
+    response = await client.post('/recipes', json={
+        "name": "bread",
+        "description": "bread",
+        "cooking_time": 1,
+        "ingredients": [
+            {
+                "product": {
+                "name": "bread"
+            },
+                "count": 1
+            }
+        ]
+    })
+
+    assert response.status_code == 204
 
 
-engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=False)
-async_session: sessionmaker = sessionmaker(
-    engine,
-    expire_on_commit=False,
-    class_=AsyncSession
-)
-
-
-async def get_session_override() -> AsyncSession:
-    session: AsyncSession
-    async with async_session() as session:
-        yield session
-
-
-app.dependency_overrides[get_session] = get_session_override
-
-
-# @pytest.mark.anyio
 @pytest.mark.parametrize('route', [
     '/recipes',
-    # '/recipes/1'
+    '/recipes/1'
 ])
 @pytest.mark.asyncio
-async def test_route_status(route: str) -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url='http://127.0.0.1:8000'
-    ) as ac:
-        response = await ac.get(route)
-
-    await engine.dispose()
+async def test_route_status(client: AsyncClient, route: str) -> None:
+    response = await client.get(route)
 
     assert response.status_code == 200
