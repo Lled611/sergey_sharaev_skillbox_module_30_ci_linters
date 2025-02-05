@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from src.main import app, get_session, Base
 
 
-DATABASE_URL: str = "sqlite+aiosqlite:///"
+DATABASE_URL: str = "sqlite+aiosqlite:///./test_recipes.db"
 
 
 engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=False)
@@ -27,11 +27,12 @@ async def get_session_override() -> AsyncSession:
 app.dependency_overrides[get_session] = get_session_override
 
 
-@pytest.mark.anyio
+# @pytest.mark.anyio
 @pytest.mark.parametrize('route', [
     '/recipes',
     # '/recipes/1'
 ])
+@pytest.mark.asyncio
 async def test_route_status(route: str) -> None:
     # with async_session() as session:
     # response = client.get(route)
