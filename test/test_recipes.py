@@ -34,8 +34,6 @@ app.dependency_overrides[get_session] = get_session_override
 ])
 @pytest.mark.asyncio
 async def test_route_status(route: str) -> None:
-    # with async_session() as session:
-    # response = client.get(route)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
