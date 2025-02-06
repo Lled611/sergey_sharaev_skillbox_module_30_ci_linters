@@ -37,7 +37,7 @@ app = FastAPI(title="Recipes", lifespan=lifespan)
     status_code=HTTPStatus.NO_CONTENT,
     responses={HTTPStatus.BAD_REQUEST: {"model": ErrorDetail}},
 )
-async def recipes(
+async def create_recipe(
     recipe_in: SchemaRecipeIn, session: AsyncSession = Depends(get_session)
 ) -> None:
     stmt: Select = select(exists().where(Recipe.name == recipe_in.name))
@@ -59,7 +59,7 @@ async def recipes(
 
     ingridient_in: SchemaIngredient
     for ingridient_in in recipe_in.ingredients:
-        stmt: Select = select(Product).where(Product.name == ingridient_in.product.name)
+        stmt = select(Product).where(Product.name == ingridient_in.product.name)
 
         product: Product = await session.scalar(stmt)
         if not product:
@@ -94,7 +94,7 @@ async def recipes(session: AsyncSession = Depends(get_session)) -> List[Recipe]:
 
     result: ScalarResult = await session.scalars(stmt)
 
-    return result.all()
+    return list(result.all())
 
 
 @app.get(
@@ -104,7 +104,7 @@ async def recipes(session: AsyncSession = Depends(get_session)) -> List[Recipe]:
     response_model=SchemaRecipeOut,
     responses={HTTPStatus.BAD_REQUEST: {"model": ErrorDetail}},
 )
-async def recipes(
+async def recipe_by_id(
     recipe_id: int = Path(..., title="Id рецепта", description="Id рецепта", gt=0),
     session: AsyncSession = Depends(get_session),
 ) -> SchemaRecipeOut:

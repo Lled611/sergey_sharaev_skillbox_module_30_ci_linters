@@ -15,7 +15,7 @@ class Product(Base):
     ingredients = relationship("Ingredient", backref="product", cascade="all")
 
     def __str__(self) -> str:
-        return self.name
+        return str(self.name)
 
 
 class Recipe(Base):
@@ -30,7 +30,7 @@ class Recipe(Base):
     ingredients = relationship("Ingredient", backref="recipe", cascade="all")
 
     def __str__(self) -> str:
-        return self.name
+        return str(self.name)
 
 
 class Ingredient(Base):
