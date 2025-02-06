@@ -1,20 +1,21 @@
-from typing import List
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Path, Depends
 from http import HTTPStatus
-from sqlalchemy import select, Select, ScalarResult
-from sqlalchemy.ext.asyncio.engine import AsyncConnection
+from typing import List
+
+from fastapi import Depends, FastAPI, HTTPException, Path
+from sqlalchemy import ScalarResult, Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio.engine import AsyncConnection
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import exists
 
-from .schemas import RecipeIn as SchemaRecipeIn, \
-    RecipeOut as SchemaRecipeOut, \
-    Ingredient as SchemaIngredient, \
-    RecipeShortInfo as SchemaRecipeShortInfo, \
-    ErrorDetail
-from .database import engine, Base, get_session
-from .models import Recipe, Product, Ingredient
+from .database import Base, engine, get_session
+from .models import Ingredient, Product, Recipe
+from .schemas import ErrorDetail
+from .schemas import Ingredient as SchemaIngredient
+from .schemas import RecipeIn as SchemaRecipeIn
+from .schemas import RecipeOut as SchemaRecipeOut
+from .schemas import RecipeShortInfo as SchemaRecipeShortInfo
 
 
 @asynccontextmanager
@@ -26,39 +27,31 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
-app = FastAPI(
-    title='Recipes',
-    lifespan=lifespan
-)
+app = FastAPI(title="Recipes", lifespan=lifespan)
 
 
 @app.post(
-    '/recipes',
-    summary='Создать новый рецепт',
-    description='Endpoint для добавления в базу новых рецептов',
+    "/recipes",
+    summary="Создать новый рецепт",
+    description="Endpoint для добавления в базу новых рецептов",
     status_code=HTTPStatus.NO_CONTENT,
-    responses={
-        HTTPStatus.BAD_REQUEST: {
-            'model': ErrorDetail
-        }
-    }
+    responses={HTTPStatus.BAD_REQUEST: {"model": ErrorDetail}},
 )
-async def recipes(recipe_in: SchemaRecipeIn, session: AsyncSession = Depends(get_session)) -> None:
-    stmt: Select = select(
-        exists() \
-            .where(Recipe.name == recipe_in.name)
-        )
+async def recipes(
+    recipe_in: SchemaRecipeIn, session: AsyncSession = Depends(get_session)
+) -> None:
+    stmt: Select = select(exists().where(Recipe.name == recipe_in.name))
 
     if await session.scalar(stmt):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
-            detail=f'Рецепт "{recipe_in.name}" уже существует!'
+            detail=f'Рецепт "{recipe_in.name}" уже существует!',
         )
 
     recipe: Recipe = Recipe(
         name=recipe_in.name,
         description=recipe_in.description,
-        cooking_time=recipe_in.cooking_time
+        cooking_time=recipe_in.cooking_time,
     )
 
     session.add(recipe)
@@ -66,22 +59,17 @@ async def recipes(recipe_in: SchemaRecipeIn, session: AsyncSession = Depends(get
 
     ingridient_in: SchemaIngredient
     for ingridient_in in recipe_in.ingredients:
-        stmt: Select = select(Product) \
-            .where(Product.name == ingridient_in.product.name)
+        stmt: Select = select(Product).where(Product.name == ingridient_in.product.name)
 
         product: Product = await session.scalar(stmt)
         if not product:
-            product = Product(
-                name=ingridient_in.product.name
-            )
+            product = Product(name=ingridient_in.product.name)
 
             session.add(product)
             await session.flush([product])
 
         ingridient: Ingredient = Ingredient(
-            recipe_id=recipe.id,
-            product_id=product.id,
-            count=ingridient_in.count
+            recipe_id=recipe.id, product_id=product.id, count=ingridient_in.count
         )
 
         session.add(ingridient)
@@ -89,23 +77,20 @@ async def recipes(recipe_in: SchemaRecipeIn, session: AsyncSession = Depends(get
 
 
 @app.get(
-    '/recipes',
-    summary='Список всех рецептов',
-    response_model=List[SchemaRecipeShortInfo]
+    "/recipes",
+    summary="Список всех рецептов",
+    response_model=List[SchemaRecipeShortInfo],
 )
 async def recipes(session: AsyncSession = Depends(get_session)) -> List[Recipe]:
-    '''
+    """
     Endpoint для получения списка всех рецептов.
 
     Рецепты отсортированы по количеству просмотров в порядке убывания.
     Если число просмотров совпадает, рецепты сортируются по времени приготовления.
-    '''
-    stmt: Select = select(Recipe) \
-        .order_by(
-            Recipe.views_count.desc(),
-            Recipe.cooking_time,
-            Recipe.id
-        )
+    """
+    stmt: Select = select(Recipe).order_by(
+        Recipe.views_count.desc(), Recipe.cooking_time, Recipe.id
+    )
 
     result: ScalarResult = await session.scalars(stmt)
 
@@ -113,29 +98,21 @@ async def recipes(session: AsyncSession = Depends(get_session)) -> List[Recipe]:
 
 
 @app.get(
-    '/recipes/{recipe_id}',
-    summary='Детальная информация о рецепте',
-    description='Endpoint для получения детальной информации о рецепте',
+    "/recipes/{recipe_id}",
+    summary="Детальная информация о рецепте",
+    description="Endpoint для получения детальной информации о рецепте",
     response_model=SchemaRecipeOut,
-    responses={
-        HTTPStatus.BAD_REQUEST: {
-            'model': ErrorDetail
-        }
-    }
+    responses={HTTPStatus.BAD_REQUEST: {"model": ErrorDetail}},
 )
 async def recipes(
-    recipe_id: int = Path(
-        ...,
-        title='Id рецепта',
-        description='Id рецепта',
-        gt=0
-    ), session: AsyncSession = Depends(get_session)
+    recipe_id: int = Path(..., title="Id рецепта", description="Id рецепта", gt=0),
+    session: AsyncSession = Depends(get_session),
 ) -> SchemaRecipeOut:
-    stmt: Select = select(Recipe) \
-        .options(
-            selectinload(Recipe.ingredients).selectinload(Ingredient.product)
-        ) \
+    stmt: Select = (
+        select(Recipe)
+        .options(selectinload(Recipe.ingredients).selectinload(Ingredient.product))
         .where(Recipe.id == recipe_id)
+    )
 
     recipe: Recipe = await session.scalar(stmt)
 
@@ -143,11 +120,9 @@ async def recipes(
         recipe.views_count += 1
         await session.commit()
 
-        recipe_out = SchemaRecipeOut.model_validate(recipe)
-
-        return recipe_out
+        return SchemaRecipeOut.model_validate(recipe)
     else:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
-            detail=f'Рецепта с id={recipe_id} не существует!'
+            detail=f"Рецепта с id={recipe_id} не существует!",
         )
