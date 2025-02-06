@@ -1,3 +1,5 @@
+from typing import AsyncGenerator
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -10,10 +12,12 @@ DATABASE_URL: str = "sqlite+aiosqlite:///"
 
 
 engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=False)
-async_session = async_sessionmaker(engine)
+async_session = async_sessionmaker(engine,
+    expire_on_commit=False,
+    class_=AsyncSession)
 
 
-async def get_session_override() -> AsyncSession:
+async def get_session_override() -> AsyncGenerator[AsyncSession, None]:
     session: AsyncSession
     async with async_session() as session:
         yield session
