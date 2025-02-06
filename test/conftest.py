@@ -1,6 +1,6 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.ext.asyncio.engine import AsyncEngine
 from sqlalchemy.orm import sessionmaker
 
@@ -10,9 +10,7 @@ DATABASE_URL: str = "sqlite+aiosqlite:///"
 
 
 engine: AsyncEngine = create_async_engine(DATABASE_URL, echo=False)
-async_session: sessionmaker = sessionmaker(
-    engine, expire_on_commit=False, class_=AsyncSession
-)
+async_session = async_sessionmaker(engine)
 
 
 async def get_session_override() -> AsyncSession:
